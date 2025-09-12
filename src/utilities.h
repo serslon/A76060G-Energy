@@ -112,7 +112,6 @@
     #define SIMSHIELD_RADIO_RST                 (15)
     #define SIMSHIELD_RS_RX                     (13)
     #define SIMSHIELD_RS_TX                     (14)
-    #define SIMSHIELD_SDA                       (21)
     #define SIMSHIELD_SCL                       (22)
     #define SerialRS485                         Serial2
 

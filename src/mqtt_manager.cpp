@@ -47,7 +47,7 @@ MQTTManager::MQTTManager(TinyGsm *gsm)
     : modem(gsm), isConnected(false), isInitialized(false),
       lastConnectAttempt(0), lastKeepAlive(0)
 {
-    Serial.println("[MQTT] MQTT Manager created");
+  Serial.println("[MQTT] MQTT Manager created");
 }
 
 bool MQTTManager::begin()
@@ -229,7 +229,7 @@ bool MQTTManager::publishParameter(MQTTParameterType paramType, const String &va
   return modem->mqtt_publish(0, topic.c_str(), payload.c_str());
 }
 
-bool MQTTManager::publishBatteryData(float voltage, int percentage, const String &status)
+bool MQTTManager::publishBatteryData(float voltage, int percentage, const String &status, unsigned long timestamp)
 {
   if (!isConnectedToMQTT())
     return false;
@@ -237,7 +237,7 @@ bool MQTTManager::publishBatteryData(float voltage, int percentage, const String
   // Создаем JSON документ для данных батареи
   JsonDocument doc;
   doc["device_id"] = MQTT_CLIENT_ID;
-  doc["timestamp"] = millis();
+  doc["timestamp"] = timestamp;
   doc["voltage"] = round(voltage * 100) / 100.0; // Округляем до 2 знаков
   doc["percentage"] = percentage;
   doc["status"] = status;
@@ -331,41 +331,42 @@ void MQTTManager::disconnect()
   }
 }
 
-bool MQTTManager::publishDeviceData(float voltage, int percentage, const String& batteryStatus,
-                                   int signal, const String& operator_name, const String& gsmStatus,
-                                   float latitude, float longitude, float altitude, int satellites,
-                                   const String& systemStatus)
+bool MQTTManager::publishDeviceData(float voltage, int percentage, const String &batteryStatus,
+                                    int signal, const String &operator_name, const String &gsmStatus,
+                                    float latitude, float longitude, float altitude, int satellites,
+                                    const String &systemStatus, unsigned long currentTimestamp,
+                                    const String &timeSync)
 {
   if (!isConnectedToMQTT())
     return false;
 
   // Создаем комплексный JSON документ со всеми данными устройства
   JsonDocument doc;
-  
+
   // Основная информация устройства
   doc["device_id"] = MQTT_CLIENT_ID;
-  doc["timestamp"] = millis();
+  doc["timestamp"] = currentTimestamp;
   doc["device_type"] = "A7670G-Energy";
-  
+
   // Данные батареи
   JsonObject battery = doc["battery"].to<JsonObject>();
   battery["voltage"] = round(voltage * 100) / 100.0;
   battery["percentage"] = percentage;
   battery["status"] = batteryStatus;
-  
+
   // Данные GSM
   JsonObject gsm = doc["gsm"].to<JsonObject>();
   gsm["signal_strength"] = signal;
   gsm["operator"] = operator_name;
   gsm["status"] = gsmStatus;
-  
+
   // Данные GPS
   JsonObject gps = doc["gps"].to<JsonObject>();
   gps["latitude"] = round(latitude * 1000000) / 1000000.0;
   gps["longitude"] = round(longitude * 1000000) / 1000000.0;
   gps["altitude"] = round(altitude * 100) / 100.0;
   gps["satellites"] = satellites;
-  
+
   // Системные данные
   JsonObject system = doc["system"].to<JsonObject>();
   system["status"] = systemStatus;
@@ -373,25 +374,39 @@ bool MQTTManager::publishDeviceData(float voltage, int percentage, const String&
   system["free_heap"] = ESP.getFreeHeap();
   system["chip_temperature"] = round(temperatureRead() * 10) / 10.0;
 
+  // Данные времени (если предоставлены)
+  if (currentTimestamp > 0 || timeSync.length() > 0)
+  {
+    JsonObject time = doc["time"].to<JsonObject>();
+    if (currentTimestamp > 0)
+    {
+      time["timestamp"] = currentTimestamp;
+    }
+    if (timeSync.length() > 0)
+    {
+      time["sync_status"] = timeSync;
+    }
+  }
+
   // Сериализуем JSON в строку
   String payload;
   serializeJson(doc, payload);
 
   String topic = MQTT_TOPIC_DEVICE;
-  
-  // Выводим красиво отформатированный JSON для отладки
-  #ifdef DEBUG_MQTT_JSON
+
+// Выводим красиво отформатированный JSON для отладки
+#ifdef DEBUG_MQTT_JSON
   printFormattedJson(doc, topic);
-  #else
+#else
   Serial.printf("MQTT: Publishing complete device data to %s\n", topic.c_str());
-  #endif
-  
+#endif
+
   Serial.printf("Payload size: %d bytes\n", payload.length());
 
   return modem->mqtt_publish(0, topic.c_str(), payload.c_str());
 }
 
-bool MQTTManager::publishAlert(const String& alertType, const String& severity, const String& message)
+bool MQTTManager::publishAlert(const String &alertType, const String &severity, const String &message, unsigned long timestamp)
 {
   if (!isConnectedToMQTT())
     return false;
@@ -399,7 +414,7 @@ bool MQTTManager::publishAlert(const String& alertType, const String& severity, 
   // Создаем JSON документ для алерта
   JsonDocument doc;
   doc["device_id"] = MQTT_CLIENT_ID;
-  doc["timestamp"] = millis();
+  doc["timestamp"] = timestamp;
   doc["alert_type"] = alertType;
   doc["severity"] = severity;
   doc["message"] = message;
@@ -424,7 +439,7 @@ String MQTTManager::getConnectionStatus()
   return "Connected";
 }
 
-void MQTTManager::printFormattedJson(const JsonDocument& doc, const String& topic)
+void MQTTManager::printFormattedJson(const JsonDocument &doc, const String &topic)
 {
   Serial.printf("MQTT: Publishing to %s:\n", topic.c_str());
   serializeJsonPretty(doc, Serial);
